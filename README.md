@@ -1,77 +1,150 @@
-# Asistente Inteligente de RRHH con LLM y RAG
+# Agente Inteligente de RRHH con LLM, RAG y Herramientas
 
 [![CI](https://github.com/frpantoja/asistente-rrhh-llm-rag/actions/workflows/ci.yml/badge.svg)](https://github.com/frpantoja/asistente-rrhh-llm-rag/actions)
 
 ## Descripción
 
-Prototipo académico de un asistente inteligente para consultas internas de Recursos Humanos, desarrollado para la empresa ficticia **Comercial Andina SpA**.
+Agente funcional inteligente para consultas internas de Recursos Humanos, desarrollado para la empresa ficticia **Comercial Andina SpA**.
 
-El sistema combina un modelo de lenguaje (LLM) con Retrieval-Augmented Generation (RAG) para responder consultas sobre vacaciones, permisos, licencias médicas, beneficios y normativas internas, basándose exclusivamente en documentos corporativos cargados en el sistema.
+El sistema implementa un agente basado en el patrón **ReAct** (Reasoning + Acting) que integra herramientas de consulta, escritura y razonamiento, junto con un sistema de memoria dual (corto y largo plazo) y planificación adaptativa. Esto le permite decidir autónomamente qué herramienta usar, mantener contexto conversacional y adaptar su comportamiento según el tipo de consulta.
 
-## Arquitectura del Sistema
+## Arquitectura del Agente
 
 ```
-┌─────────────┐     ┌──────────────────┐     ┌─────────────────┐
-│   Consulta   │────▶│   Retrieval      │────▶│   Generación    │
-│   usuario    │     │   (FAISS + MMR)  │     │   (LLM + Prompt)│
-└─────────────┘     └──────────────────┘     └─────────────────┘
-                           │                         │
-                    ┌──────┴──────┐            ┌─────┴──────┐
-                    │  Filtrado   │            │  Guardrails │
-                    │  por umbral │            │  anti-aluc. │
-                    │  + Re-rank  │            │  + Few-shot │
-                    └─────────────┘            └────────────┘
+                         ┌──────────────────────┐
+                         │   Consulta del        │
+                         │   trabajador          │
+                         └──────────┬───────────┘
+                                    │
+                         ┌──────────▼───────────┐
+                         │   AGENTE ReAct        │
+                         │   (Planificación +    │
+                         │    Toma de decisiones) │
+                         └──────────┬───────────┘
+                                    │
+                    ┌───────────────┼───────────────┐
+                    │               │               │
+           ┌────────▼──────┐ ┌─────▼──────┐ ┌──────▼───────┐
+           │  Herramienta  │ │ Herramienta│ │ Herramienta  │
+           │  CONSULTA     │ │ ESCRITURA  │ │ RAZONAMIENTO │
+           │  (RAG/FAISS)  │ │ (Resúmenes)│ │ (Análisis)   │
+           └────────┬──────┘ └─────┬──────┘ └──────┬───────┘
+                    │               │               │
+                    └───────────────┼───────────────┘
+                                    │
+                    ┌───────────────┼───────────────┐
+                    │                               │
+           ┌────────▼──────┐              ┌────────▼────────┐
+           │  MEMORIA       │              │  MEMORIA         │
+           │  CORTO PLAZO   │              │  LARGO PLAZO     │
+           │  (Historial    │              │  (RAG: FAISS +   │
+           │   conversación)│              │   Embeddings)    │
+           └───────────────┘              └─────────────────┘
 ```
 
-### Pipeline RAG
-
-1. **Ingesta**: Los documentos `.txt` se cargan con metadatos automáticos (tipo, título, fuente).
-2. **Chunking**: División con `RecursiveCharacterTextSplitter` (300 chars, overlap 80) con separadores optimizados para español.
-3. **Indexación**: Generación de embeddings (`text-embedding-3-small`) y almacenamiento en FAISS.
-4. **Retrieval**: Búsqueda por similitud con filtrado por umbral (`>0.3`) y selección de top-k.
-5. **Generación**: Prompt estructurado con few-shot examples y guardrails contra alucinaciones.
-
-### Componentes Técnicos
+### Componentes del Sistema
 
 | Componente | Tecnología | Propósito |
 |---|---|---|
-| Embeddings | `text-embedding-3-small` (Azure) | Representación vectorial de documentos |
-| Vector Store | FAISS | Búsqueda de similitud eficiente |
-| LLM | `gpt-4o-mini` (Azure) | Generación de respuestas |
-| Framework | LangChain | Orquestación del pipeline RAG |
-| CI/CD | GitHub Actions | Tests automáticos y validación |
+| Agente | LangChain Agents (ReAct) | Orquestación y toma de decisiones |
+| Tool: Consulta | FAISS + Embeddings | Búsqueda semántica en documentos |
+| Tool: Escritura | LLM (gpt-4o-mini) | Generación de resúmenes y documentos |
+| Tool: Razonamiento | LLM + multi-fuente | Análisis de situaciones complejas |
+| Memoria corto plazo | ConversationBufferWindowMemory | Historial conversacional (últimas 5) |
+| Memoria largo plazo | FAISS + text-embedding-3-small | Base vectorial persistente |
+| Embeddings | text-embedding-3-small (Azure) | Representación vectorial |
+| LLM | gpt-4o-mini (Azure) | Generación de respuestas |
+| CI/CD | GitHub Actions | Tests automáticos |
 
 ## Estructura del Proyecto
 
 ```
 asistente-rrhh-llm-rag/
-├── app.py                      # Interfaz de consola principal
+├── app.py                          # Interfaz de consola del agente
 ├── config/
 │   ├── __init__.py
-│   └── settings.py             # Configuración centralizada
+│   └── settings.py                 # Configuración centralizada
 ├── src/
 │   ├── __init__.py
-│   ├── cargar_documentos.py    # Carga de documentos con metadatos
-│   ├── crear_vectores.py       # Pipeline de indexación
-│   ├── prompts.py              # Templates de prompts avanzados
-│   └── rag_pipeline.py         # Pipeline RAG con re-ranking
+│   ├── agente.py                   # Agente funcional (orquestador)
+│   ├── memoria.py                  # Memoria corto y largo plazo
+│   ├── cargar_documentos.py        # Carga de documentos con metadatos
+│   ├── crear_vectores.py           # Pipeline de indexación FAISS
+│   ├── prompts.py                  # Templates de prompts
+│   ├── rag_pipeline.py             # Pipeline RAG (base)
+│   └── tools/
+│       ├── __init__.py
+│       ├── consulta_tool.py        # Herramienta de consulta documental
+│       ├── escritura_tool.py       # Herramienta de escritura/resúmenes
+│       └── razonamiento_tool.py    # Herramienta de razonamiento normativo
 ├── tests/
 │   ├── __init__.py
+│   ├── test_agente.py
 │   ├── test_cargar_documentos.py
+│   ├── test_memoria.py
 │   ├── test_prompts.py
-│   └── test_rag_pipeline.py
+│   ├── test_rag_pipeline.py
+│   └── test_tools.py
 ├── data/
-│   ├── internos/               # Documentos corporativos simulados
-│   └── externos/               # Normativa laboral de referencia
-├── evidencias/                 # Capturas de pruebas
-├── .github/
-│   └── workflows/
-│       └── ci.yml              # Pipeline de CI con GitHub Actions
-├── .env.example                # Plantilla de variables de entorno
+│   ├── internos/                   # Documentos corporativos simulados
+│   └── externos/                   # Normativa laboral de referencia
+├── evidencias/                     # Capturas de pruebas
+├── .github/workflows/ci.yml       # Pipeline CI
+├── .env.example
 ├── .gitignore
 ├── requirements.txt
 └── README.md
 ```
+
+## Herramientas del Agente
+
+### 1. Herramienta de Consulta (`consultar_documentos`)
+Realiza búsqueda semántica en la base vectorial FAISS para recuperar fragmentos relevantes de los documentos de RRHH. Implementa filtrado por umbral de similitud (0.3) para evitar resultados irrelevantes.
+
+**Cuándo se usa**: Preguntas directas sobre políticas, procedimientos o normativas.
+
+### 2. Herramienta de Escritura (`generar_resumen`)
+Genera documentos estructurados como resúmenes de procedimientos, correos formales de solicitud y explicaciones paso a paso de trámites.
+
+**Cuándo se usa**: Cuando el trabajador necesita un documento formal o un resumen escrito.
+
+### 3. Herramienta de Razonamiento (`analizar_situacion_laboral`)
+Analiza situaciones laborales complejas que requieren cruzar información de múltiples documentos (internos y externos) y aplicar lógica normativa.
+
+**Cuándo se usa**: Casos del tipo "¿qué pasa si...?" o situaciones con múltiples condiciones.
+
+## Sistema de Memoria
+
+### Memoria de Corto Plazo
+- **Tecnología**: `ConversationBufferWindowMemory` de LangChain.
+- **Ventana**: Últimas 5 interacciones (pregunta + respuesta).
+- **Propósito**: Mantener contexto conversacional para preguntas de seguimiento.
+- **Ejemplo**: Si el trabajador pregunta sobre vacaciones y luego dice "¿y cómo las solicito?", el agente entiende que se refiere a vacaciones.
+
+### Memoria de Largo Plazo
+- **Tecnología**: FAISS + embeddings (`text-embedding-3-small`).
+- **Persistencia**: Guardada en disco (`faiss_index/`).
+- **Propósito**: Almacenar y recuperar semánticamente los documentos de RRHH.
+- **Documentos**: 5 internos + 3 externos, divididos en chunks de 300 caracteres.
+
+## Planificación y Toma de Decisiones
+
+El agente implementa planificación adaptativa mediante el patrón ReAct:
+
+1. **Clasificación de consulta**: Identifica si es consulta simple, solicitud de documento, caso complejo o tema fuera de alcance.
+2. **Selección de herramienta**: Elige la herramienta más adecuada según la clasificación.
+3. **Ejecución iterativa**: Puede usar múltiples herramientas en secuencia si es necesario.
+4. **Adaptación**: Ajusta su comportamiento según los resultados intermedios.
+
+### Ejemplos de toma de decisiones
+
+| Consulta | Decisión del agente | Herramienta |
+|---|---|---|
+| "¿Cuántos días de vacaciones tengo?" | Consulta directa → buscar en documentos | `consultar_documentos` |
+| "Hazme un correo para pedir vacaciones" | Necesita generar documento formal | `generar_resumen` + `consultar_documentos` |
+| "Si estoy con licencia, ¿puedo pedir vacaciones?" | Caso complejo, cruzar normativas | `analizar_situacion_laboral` |
+| "¿Cuál es la capital de Francia?" | Fuera de alcance → respuesta directa | Ninguna |
+| "¿Y cómo las solicito?" (seguimiento) | Usa memoria para entender contexto | `consultar_documentos` |
 
 ## Requisitos Previos
 
@@ -99,35 +172,52 @@ cp .env.example .env
 # Editar .env con tu GITHUB_TOKEN personal
 ```
 
-## Configuración del Token
-
-Crea un token en [GitHub Settings > Developer Settings > Personal Access Tokens](https://github.com/settings/tokens) con permiso de lectura para modelos (`models:read`).
-
-Agrega el token en el archivo `.env`:
-```env
-GITHUB_TOKEN=ghp_tu_token_aqui
-```
-
 ## Uso
 
-### 1. Crear la base vectorial
+### 1. Crear la base vectorial (primera vez o si cambian los documentos)
 
 ```bash
 python -m src.crear_vectores
 ```
 
-### 2. Ejecutar el asistente
+### 2. Ejecutar el agente
 
 ```bash
 python app.py
 ```
 
-### Ejemplos de consultas
+### Comandos disponibles en la consola
 
+| Comando | Acción |
+|---|---|
+| Escribir una consulta | El agente la procesa y responde |
+| `memoria` | Muestra el estado de la memoria conversacional |
+| `limpiar` | Limpia la memoria de corto plazo |
+| `salir` | Termina el programa |
+
+### Ejemplos de consultas para probar
+
+**Consultas simples** (usa herramienta de consulta):
 - ¿Cuántos días de vacaciones me corresponden?
 - ¿Cómo solicito un permiso administrativo?
-- ¿Qué debo hacer si tengo una licencia médica?
-- ¿Qué beneficios internos ofrece la empresa?
+- ¿Qué beneficios ofrece la empresa?
+
+**Solicitudes de escritura** (usa herramienta de escritura):
+- Hazme un resumen del procedimiento de licencias médicas
+- Redacta un correo para solicitar vacaciones
+
+**Casos complejos** (usa herramienta de razonamiento):
+- Si estoy con licencia médica, ¿puedo pedir vacaciones al mismo tiempo?
+- ¿Qué diferencia hay entre lo que dice el reglamento interno y el Código del Trabajo sobre permisos?
+
+**Seguimiento con memoria** (prueba de continuidad):
+- Primero: "¿Qué dice la política de vacaciones?"
+- Luego: "¿Y cómo las solicito?"
+- Luego: "¿Con cuánta anticipación?"
+
+**Fuera de alcance** (prueba de guardrails):
+- ¿Cuál es la capital de Francia?
+- ¿Puedo trabajar desde casa?
 
 ### 3. Ejecutar tests
 
@@ -137,21 +227,39 @@ python -m pytest tests/ -v
 
 ## Decisiones Técnicas
 
+### ¿Por qué LangChain Agents con ReAct?
+El patrón ReAct permite al agente razonar explícitamente antes de actuar. A diferencia de un pipeline lineal (siempre RAG → LLM), el agente evalúa la consulta y decide el mejor camino. Esto es más flexible y escalable que un sistema de reglas fijas.
+
+### ¿Por qué separar en 3 herramientas?
+Cada herramienta tiene un propósito claro y distinto. La separación permite al agente combinarlas según necesite y facilita agregar nuevas herramientas en el futuro sin modificar el agente.
+
+### ¿Por qué ConversationBufferWindowMemory?
+Una ventana de 5 interacciones balancea contexto y eficiencia. Memoria completa (sin ventana) puede exceder el límite de tokens del modelo en conversaciones largas. Memoria de resumen perdería detalles importantes para preguntas de seguimiento.
+
 ### ¿Por qué chunks de 300 caracteres?
+Los documentos de RRHH son cortos (~650 chars promedio). Chunks de 300 con overlap de 80 capturan secciones individuales con contexto suficiente, mejorando la precisión del retrieval respecto a chunks más grandes.
 
-Los documentos de RRHH son cortos y altamente estructurados (promedio ~650 chars). Chunks de 500 (versión anterior) podían contener múltiples secciones mezcladas, diluyendo la relevancia. Chunks de 300 con overlap de 80 permiten capturar secciones individuales con contexto suficiente.
+## Tecnologías y Frameworks
 
-### ¿Por qué umbral de similitud?
-
-Sin umbral, el sistema siempre retorna k documentos aunque ninguno sea relevante, lo que causa alucinaciones. El umbral de 0.3 filtra chunks irrelevantes y permite al sistema responder honestamente cuando no tiene información.
-
-### ¿Por qué few-shot en el prompt?
-
-Los ejemplos en el prompt le muestran al modelo el formato esperado de respuesta y, especialmente, cómo responder cuando no tiene información suficiente. Esto reduce alucinaciones comparado con el prompt genérico original.
+- **Python 3.10+**: Lenguaje principal
+- **LangChain**: Framework de agentes, herramientas y memoria
+- **FAISS**: Base vectorial para búsqueda de similitud
+- **OpenAI (via Azure)**: Modelos de embedding y LLM
+- **GitHub Actions**: CI/CD
+- **pytest**: Testing
 
 ## Uso Ético de IA
 
 Este proyecto fue desarrollado con apoyo de inteligencia artificial para mejorar redacción, organización y orientación técnica. El análisis del caso, diseño de la solución, arquitectura y validación fueron realizados por el equipo.
+
+## Referencias
+
+- LangChain. (2024). *LangChain Documentation*. https://python.langchain.com/docs/
+- LangChain. (2024). *Agents*. https://python.langchain.com/docs/concepts/agents/
+- LangChain. (2024). *Memory*. https://python.langchain.com/docs/concepts/memory/
+- Facebook AI Research. (2024). *FAISS: A Library for Efficient Similarity Search*. https://github.com/facebookresearch/faiss
+- Yao, S., Zhao, J., Yu, D., et al. (2023). ReAct: Synergizing Reasoning and Acting in Language Models. *ICLR 2023*. https://arxiv.org/abs/2210.03629
+- Lewis, P., Perez, E., Piktus, A., et al. (2020). Retrieval-Augmented Generation for Knowledge-Intensive NLP Tasks. *NeurIPS 2020*. https://arxiv.org/abs/2005.11401
 
 ## Autoría
 

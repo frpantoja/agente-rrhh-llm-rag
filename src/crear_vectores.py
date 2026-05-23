@@ -1,11 +1,9 @@
 """
-Módulo de creación de base vectorial con chunking avanzado.
+Módulo de creación de base vectorial.
 
-Mejoras respecto a la versión original:
-- Chunk size reducido (300) con mayor overlap (80) para mejor granularidad.
-- Los metadatos del documento se propagan a cada chunk.
-- Logging detallado del proceso de indexación.
-- Separadores personalizados para documentos en español.
+Carga los documentos, los divide en fragmentos con separadores
+optimizados para español, genera embeddings y los almacena
+en un índice FAISS para búsqueda semántica.
 """
 
 import logging

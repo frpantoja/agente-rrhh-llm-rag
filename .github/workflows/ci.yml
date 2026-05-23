@@ -35,3 +35,5 @@ jobs:
           python -c "from config.settings import *; print('Config OK')"
           python -c "from src.prompts import RAG_PROMPT_TEMPLATE; print('Prompts OK')"
           python -c "from src.cargar_documentos import cargar_documentos; print('Carga OK')"
+          python -c "from src.memoria import crear_memoria_corto_plazo; print('Memoria OK')"
+          python -c "from src.tools.consulta_tool import consultar_documentos; print('Tools OK')"

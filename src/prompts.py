@@ -1,11 +1,8 @@
 """
-Módulo de templates de prompts avanzados.
+Templates de prompts para el sistema.
 
-Mejoras respecto a la versión original:
-- Prompts estructurados con PromptTemplate de LangChain.
-- Instrucciones de guardrails contra alucinaciones.
-- Few-shot examples para consistencia de respuestas.
-- Separación clara de sistema, contexto y consulta.
+Contiene los prompts del sistema, ejemplos few-shot y la plantilla
+principal que estructura las consultas al modelo.
 """
 
 from langchain_core.prompts import PromptTemplate

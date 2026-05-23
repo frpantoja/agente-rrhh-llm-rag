@@ -1,11 +1,9 @@
 """
 Módulo de carga de documentos con extracción de metadatos.
 
-Mejoras respecto a la versión original:
-- Extracción automática de metadatos (fuente, tipo, nombre del archivo).
-- Soporte para clasificación automática de documentos internos/externos.
-- Logging estructurado en lugar de prints.
-- Manejo robusto de encodings.
+Maneja la lectura de archivos .txt desde las carpetas de datos,
+extrayendo metadatos como tipo de documento, título y fuente.
+Soporta detección automática de encoding.
 """
 
 import logging

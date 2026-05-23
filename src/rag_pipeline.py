@@ -1,14 +1,8 @@
 """
-Pipeline RAG avanzado con re-ranking y guardrails.
+Pipeline RAG con filtrado por similitud y re-ranking.
 
-Mejoras respecto a la versión original:
-- Re-ranking por similitud con la pregunta original.
-- Maximal Marginal Relevance (MMR) para diversidad de resultados.
-- Umbral de similitud configurable para filtrar documentos irrelevantes.
-- Instancias de LLM y embeddings reutilizables (no se recrean por consulta).
-- Logging detallado del proceso de retrieval.
-- Información de fuentes en la respuesta.
-- Detección de consultas fuera de alcance.
+Implementa la búsqueda semántica en la base vectorial y la generación
+de respuestas usando el LLM con prompts estructurados.
 """
 
 import logging
@@ -117,14 +111,14 @@ class AsistenteRRHH:
                 doc.metadata["score"] = round(score, 4)
                 docs_filtrados.append(doc)
                 logger.debug(
-                    "  ✓ score=%.4f | %s | %s",
+                    "  [OK] score=%.4f | %s | %s",
                     score,
                     doc.metadata.get("nombre_archivo", "?"),
                     doc.page_content[:60].replace("\n", " "),
                 )
             else:
                 logger.debug(
-                    "  ✗ score=%.4f (bajo umbral %.2f) | %s",
+                    "  [--] score=%.4f (bajo umbral %.2f) | %s",
                     score,
                     SIMILARITY_THRESHOLD,
                     doc.metadata.get("nombre_archivo", "?"),

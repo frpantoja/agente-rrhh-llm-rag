@@ -1,17 +1,20 @@
 """
-Interfaz de consola del Asistente de RRHH.
+Interfaz de consola del Agente de RRHH.
 
-Mejoras respecto a la versión original:
-- Usa la clase AsistenteRRHH (instancia única, no recrea por consulta).
-- Muestra fuentes utilizadas en cada respuesta.
-- Logging configurado.
-- Manejo robusto de errores con mensajes descriptivos.
+Implementa la interfaz de usuario para interactuar con el agente funcional.
+El agente mantiene memoria conversacional entre preguntas y decide
+qué herramientas usar para responder.
+
+Comandos especiales:
+- 'salir' / 'exit': Terminar el programa.
+- 'memoria': Ver el estado de la memoria del agente.
+- 'limpiar': Limpiar la memoria conversacional.
 """
 
 import logging
 
 from config.settings import LOG_LEVEL, LOG_FORMAT
-from src.rag_pipeline import AsistenteRRHH
+from src.agente import AgenteRRHH
 
 logging.basicConfig(level=getattr(logging, LOG_LEVEL), format=LOG_FORMAT)
 logger = logging.getLogger(__name__)
@@ -19,20 +22,21 @@ logger = logging.getLogger(__name__)
 
 def main():
     print("\n" + "=" * 60)
-    print("  Asistente Inteligente de RRHH - Comercial Andina SpA")
+    print("  Agente Inteligente de RRHH - Comercial Andina SpA")
     print("  Escribe tu consulta o 'salir' para terminar.")
+    print("  Comandos: 'memoria' | 'limpiar' | 'salir'")
     print("=" * 60 + "\n")
 
     try:
-        asistente = AsistenteRRHH()
+        agente = AgenteRRHH()
     except ValueError as e:
-        print(f"\n❌ Error de configuración: {e}")
-        print("Revisa el archivo .env y asegúrate de tener un GITHUB_TOKEN válido.")
+        print(f"\nError de configuracion: {e}")
+        print("Revisa el archivo .env y asegurate de tener un GITHUB_TOKEN valido.")
         return
 
     while True:
         try:
-            pregunta = input("📝 Consulta: ").strip()
+            pregunta = input("Consulta: ").strip()
         except (EOFError, KeyboardInterrupt):
             print("\nPrograma finalizado.")
             break
@@ -44,23 +48,29 @@ def main():
             print("Programa finalizado.")
             break
 
-        try:
-            resultado = asistente.consultar(pregunta)
+        if pregunta.lower() == "memoria":
+            print(f"\n{agente.obtener_estado_memoria()}")
+            continue
 
-            print(f"\n💬 Respuesta:")
+        if pregunta.lower() == "limpiar":
+            agente.limpiar_memoria()
+            print("\nMemoria conversacional limpiada.\n")
+            continue
+
+        try:
+            resultado = agente.consultar(pregunta)
+
+            print(f"\nRespuesta:")
             print(resultado.respuesta)
 
-            if resultado.fuentes:
-                print(f"\n📄 Fuentes consultadas:")
-                for fuente in set(resultado.fuentes):
-                    print(f"   - {fuente}")
+            if resultado.herramientas_usadas:
+                print(f"\nHerramientas utilizadas: {', '.join(resultado.herramientas_usadas)}")
 
-            print(f"\n📊 Documentos relevantes: {resultado.num_documentos_relevantes}")
             print("\n" + "-" * 60 + "\n")
 
         except Exception as e:
             logger.error("Error al procesar consulta: %s", e, exc_info=True)
-            print(f"\n❌ Ocurrió un error: {e}")
+            print(f"\nOcurrio un error: {e}")
             print("Intenta reformular tu consulta.\n")
 
 
