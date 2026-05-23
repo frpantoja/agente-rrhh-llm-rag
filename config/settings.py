@@ -32,5 +32,5 @@ DATA_DIR = "data"
 FAISS_INDEX_DIR = "faiss_index"
 
 # --- Logging ---
-LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
+LOG_LEVEL = os.getenv("LOG_LEVEL", "WARNING")
 LOG_FORMAT = "%(asctime)s | %(levelname)-8s | %(name)s | %(message)s"
