@@ -135,22 +135,49 @@ Por defecto se usa **Summary Memory**, que genera un resumen progresivo de la co
 
 ## Planificación y Toma de Decisiones
 
-El agente implementa planificación adaptativa mediante el patrón ReAct:
+El agente sigue un esquema de planificación con orden estricto de evaluación y prioridades definidas:
 
-1. **Clasificación de consulta**: Identifica si es consulta simple, solicitud de documento, caso complejo o tema fuera de alcance.
-2. **Selección de herramienta**: Elige la herramienta más adecuada según la clasificación.
-3. **Ejecución iterativa**: Puede usar múltiples herramientas en secuencia si es necesario.
-4. **Adaptación**: Ajusta su comportamiento según los resultados intermedios.
+```
+PASO 1: ¿Es tema de RRHH?
+        |
+        No --> Responder directamente, fin.
+        |
+        Si
+        v
+PASO 2: Clasificación por prioridad
+        |
+        a) ¿Requiere documento/resumen?  --> generar_resumen
+        |  (prioridad sobre consulta simple)
+        |
+        b) ¿Caso complejo / multi-norma? --> analizar_situacion_laboral
+        |
+        c) Caso simple                   --> consultar_documentos
+        v
+PASO 3: ¿La consulta depende del historial?
+        |
+        Si --> Reformular antes de buscar
+        |      (ej: "¿cómo las solicito?" → "cómo solicitar vacaciones")
+        v
+PASO 4: ¿Se necesitan varias herramientas en secuencia?
+        |
+        Si --> Ejecutar en orden y combinar resultados
+```
+
+Este esquema asegura que, ante una consulta que podría calzar con más de una herramienta (por ejemplo, pedir un correo formal sobre vacaciones, que es a la vez documento y consulta simple), el agente sabe cuál tiene prioridad: generar el documento, que a su vez requiere consultar primero.
+
+### Resolución de contexto en preguntas de seguimiento
+
+Una limitación frecuente en agentes con RAG es que preguntas de seguimiento cortas ("¿y cómo las solicito?") pierden precisión en la búsqueda semántica porque no contienen suficiente información por sí solas. El agente reformula estas consultas incorporando el tema de la conversación previa antes de invocar `consultar_documentos`, asegurando que la recuperación semántica siga siendo precisa incluso en conversaciones prolongadas con múltiples turnos.
 
 ### Ejemplos de toma de decisiones
 
 | Consulta | Decisión del agente | Herramienta |
 |---|---|---|
 | "¿Cuántos días de vacaciones tengo?" | Consulta directa → buscar en documentos | `consultar_documentos` |
-| "Hazme un correo para pedir vacaciones" | Necesita generar documento formal | `generar_resumen` + `consultar_documentos` |
+| "Hazme un correo para pedir vacaciones" | Necesita generar documento formal (prioridad sobre consulta simple) | `generar_resumen` + `consultar_documentos` |
 | "Si estoy con licencia, ¿puedo pedir vacaciones?" | Caso complejo, cruzar normativas | `analizar_situacion_laboral` |
 | "¿Cuál es la capital de Francia?" | Fuera de alcance → respuesta directa | Ninguna |
-| "¿Y cómo las solicito?" (seguimiento) | Usa memoria para entender contexto | `consultar_documentos` |
+| "¿Y cómo las solicito?" (seguimiento) | Reformula con el tema previo antes de buscar | `consultar_documentos` |
 
 ## Requisitos Previos
 
