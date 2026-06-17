@@ -37,3 +37,5 @@ jobs:
           python -c "from src.cargar_documentos import cargar_documentos; print('Carga OK')"
           python -c "from src.memoria import crear_memoria_corto_plazo; print('Memoria OK')"
           python -c "from src.tools.consulta_tool import consultar_documentos; print('Tools OK')"
+          python -c "from src.observabilidad.trazas import nuevo_trace_id; print('Trazas OK')"
+          python -c "from src.observabilidad.metricas import AgentMetrics; print('Metricas OK')"

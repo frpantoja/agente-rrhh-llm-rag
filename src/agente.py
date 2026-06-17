@@ -21,6 +21,7 @@ Flujo de decisión del agente:
 """
 
 import logging
+import time
 from dataclasses import dataclass, field
 from typing import List
 
@@ -40,6 +41,8 @@ from src.tools.consulta_tool import consultar_documentos
 from src.tools.escritura_tool import generar_resumen
 from src.tools.razonamiento_tool import analizar_situacion_laboral
 from src.memoria import crear_memoria
+from src.observabilidad.trazas import nuevo_trace_id, trace_event, hash_consulta
+from src.observabilidad.metricas import AgentMetrics, ConsistenciaAnalyzer, AnomalyDetector
 
 logger = logging.getLogger(__name__)
 
@@ -111,6 +114,8 @@ class RespuestaAgente:
     herramientas_usadas: List[str] = field(default_factory=list)
     consulta_original: str = ""
     memoria_activa: str = ""
+    trace_id: str = ""
+    duracion_ms: float = 0.0
 
 
 class AgenteRRHH:
@@ -166,6 +171,11 @@ class AgenteRRHH:
             tools=self._tools,
         )
 
+        # Componentes de observabilidad
+        self._metrics = AgentMetrics()
+        self._consistencia = ConsistenciaAnalyzer()
+        self._anomaly_detector = AnomalyDetector()
+
         logger.info(
             "AgenteRRHH inicializado (modelo=%s, herramientas=%d, memoria=activa)",
             LLM_MODEL,
@@ -183,13 +193,25 @@ class AgenteRRHH:
         4. Genera una respuesta integrada.
         5. Almacena la interacción en memoria.
 
+        Cada consulta genera un trace_id único que conecta los eventos
+        registrados (retrieval, llamadas a herramientas, generación),
+        y se acumulan métricas de latencia, éxito y uso de herramientas
+        para fines de observabilidad.
+
         Args:
             pregunta: Consulta del trabajador en lenguaje natural.
 
         Returns:
-            Objeto RespuestaAgente con la respuesta y metadatos.
+            Objeto RespuestaAgente con la respuesta, metadatos y trace_id.
         """
-        logger.info("Nueva consulta al agente: '%s'", pregunta)
+        trace_id = nuevo_trace_id()
+        inicio = time.time()
+
+        trace_event(
+            trace_id, "consulta_completa", "start",
+            metadata={"consulta_hash": hash_consulta(pregunta)},
+        )
+        logger.info("Nueva consulta al agente [trace_id=%s]", trace_id)
 
         try:
             # Construir mensajes con historial + consulta actual
@@ -197,8 +219,15 @@ class AgenteRRHH:
             mensajes.extend(self._memoria.obtener_mensajes())
             mensajes.append(HumanMessage(content=pregunta))
 
-            # Ejecutar agente
+            # Ejecutar agente (span de invocación completa del LLM/tools)
+            t_agente = time.time()
             resultado = self._agent.invoke({"messages": mensajes})
+            duracion_agente_ms = (time.time() - t_agente) * 1000
+            trace_event(
+                trace_id, "agent_invoke", "end",
+                duration_ms=duracion_agente_ms,
+                metadata={"status": "ok"},
+            )
 
             # Extraer respuesta final
             respuesta_texto = resultado["messages"][-1].content
@@ -209,33 +238,85 @@ class AgenteRRHH:
                 if hasattr(msg, "tool_calls") and msg.tool_calls:
                     for tc in msg.tool_calls:
                         herramientas.append(tc["name"])
+                        trace_event(
+                            trace_id, f"tool:{tc['name']}", "end",
+                            metadata={"status": "ok"},
+                        )
 
             # Guardar en memoria de corto plazo
             self._memoria.agregar_interaccion(pregunta, respuesta_texto)
+
+            duracion_total_ms = (time.time() - inicio) * 1000
+
+            # Registrar métricas de la interacción
+            self._metrics.registrar_interaccion(
+                duracion_ms=duracion_total_ms,
+                exito=True,
+                herramientas=herramientas,
+            )
+            categoria = herramientas[0] if herramientas else "sin_herramienta"
+            self._consistencia.registrar(categoria, len(respuesta_texto))
+            anomalia = self._anomaly_detector.procesar(duracion_total_ms, trace_id)
+
+            trace_event(
+                trace_id, "consulta_completa", "end",
+                duration_ms=duracion_total_ms,
+                metadata={
+                    "status": "ok",
+                    "herramientas": herramientas,
+                    "es_anomalia": anomalia["es_anomalia"],
+                    "z_score": anomalia["z_score"],
+                },
+            )
 
             respuesta = RespuestaAgente(
                 respuesta=respuesta_texto,
                 herramientas_usadas=herramientas,
                 consulta_original=pregunta,
                 memoria_activa=self._memoria.obtener_resumen(),
+                trace_id=trace_id,
+                duracion_ms=round(duracion_total_ms, 2),
             )
 
             logger.info(
-                "Respuesta generada (herramientas: %s)",
+                "Respuesta generada [trace_id=%s] (herramientas: %s, %.0fms)",
+                trace_id,
                 ", ".join(herramientas) if herramientas else "ninguna",
+                duracion_total_ms,
             )
 
             return respuesta
 
         except Exception as e:
-            logger.error("Error en el agente: %s", e, exc_info=True)
+            duracion_total_ms = (time.time() - inicio) * 1000
+            self._metrics.registrar_interaccion(
+                duracion_ms=duracion_total_ms, exito=False,
+            )
+            trace_event(
+                trace_id, "consulta_completa", "error",
+                duration_ms=duracion_total_ms,
+                metadata={"status": "failed", "error_type": type(e).__name__},
+            )
+            logger.error(
+                "Error en el agente [trace_id=%s]: %s", trace_id, e, exc_info=True
+            )
             return RespuestaAgente(
                 respuesta=(
                     "Ocurrió un error al procesar tu consulta. "
                     "Por favor, intenta reformularla o contacta al área de RRHH."
                 ),
                 consulta_original=pregunta,
+                trace_id=trace_id,
+                duracion_ms=round(duracion_total_ms, 2),
             )
+
+    def obtener_metricas(self) -> dict:
+        """Retorna el resumen de métricas acumuladas de la sesión."""
+        return self._metrics.resumen()
+
+    def obtener_consistencia(self) -> dict:
+        """Retorna el análisis de consistencia por tipo de consulta."""
+        return self._consistencia.consistencia_por_categoria()
 
     def obtener_estado_memoria(self) -> str:
         """Retorna el estado actual de la memoria del agente."""

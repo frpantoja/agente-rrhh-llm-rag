@@ -61,6 +61,7 @@ El sistema implementa un agente basado en el patrón **ReAct** (Reasoning + Acti
 ```
 asistente-rrhh-llm-rag/
 ├── app.py                          # Interfaz de consola del agente
+├── dashboard.py                    # Dashboard de observabilidad (Streamlit)
 ├── config/
 │   ├── __init__.py
 │   └── settings.py                 # Configuración centralizada
@@ -72,22 +73,29 @@ asistente-rrhh-llm-rag/
 │   ├── crear_vectores.py           # Pipeline de indexación FAISS
 │   ├── prompts.py                  # Templates de prompts
 │   ├── rag_pipeline.py             # Pipeline RAG (base)
-│   └── tools/
+│   ├── tools/
+│   │   ├── __init__.py
+│   │   ├── consulta_tool.py        # Herramienta de consulta documental
+│   │   ├── escritura_tool.py       # Herramienta de escritura/resúmenes
+│   │   └── razonamiento_tool.py    # Herramienta de razonamiento normativo
+│   └── observabilidad/
 │       ├── __init__.py
-│       ├── consulta_tool.py        # Herramienta de consulta documental
-│       ├── escritura_tool.py       # Herramienta de escritura/resúmenes
-│       └── razonamiento_tool.py    # Herramienta de razonamiento normativo
+│       ├── trazas.py               # Trace_id, spans y logging estructurado
+│       └── metricas.py             # Latencia, tasa de éxito, consistencia, anomalías
 ├── tests/
 │   ├── __init__.py
 │   ├── test_agente.py
 │   ├── test_cargar_documentos.py
 │   ├── test_memoria.py
+│   ├── test_metricas.py
 │   ├── test_prompts.py
 │   ├── test_rag_pipeline.py
-│   └── test_tools.py
+│   ├── test_tools.py
+│   └── test_trazas.py
 ├── data/
 │   ├── internos/                   # Documentos corporativos simulados
 │   └── externos/                   # Normativa laboral de referencia
+├── logs/                           # Trazas JSON (generadas en ejecución, no versionadas)
 ├── evidencias/                     # Capturas de pruebas
 ├── .github/workflows/ci.yml       # Pipeline CI
 ├── .env.example
@@ -95,6 +103,32 @@ asistente-rrhh-llm-rag/
 ├── requirements.txt
 └── README.md
 ```
+
+## Observabilidad y Trazabilidad
+
+El sistema registra cada consulta con un **trace_id** único que conecta todos los pasos de su procesamiento (invocación del agente, llamadas a herramientas, generación de respuesta). Los eventos se guardan en `logs/trazas.jsonl` en formato JSON estructurado.
+
+### Métricas implementadas
+
+| Métrica | Descripción | Módulo |
+|---|---|---|
+| Latencia | Tiempo total por consulta, promedio, mediana y p95 | `AgentMetrics` |
+| Tasa de éxito/error | Porcentaje de consultas resueltas sin fallos | `AgentMetrics` |
+| Uso de herramientas | Frecuencia de cada herramienta del agente | `AgentMetrics` |
+| Consistencia | Variabilidad de longitud de respuesta por tipo de consulta | `ConsistenciaAnalyzer` |
+| Anomalías | Detección de picos de latencia vía z-score sobre ventana deslizante | `AnomalyDetector` |
+
+### Minimización de datos
+
+Las consultas de los trabajadores se registran como **hash SHA-256**, no como texto plano, en los archivos de traza. Esto reduce el riesgo de exponer información personal en los logs, en línea con principios de minimización de datos de la Ley 21.719 sobre protección de datos personales en Chile.
+
+### Dashboard de monitoreo
+
+```bash
+streamlit run dashboard.py
+```
+
+El dashboard muestra: latencia por consulta en el tiempo, distribución de uso de herramientas, tasa de error y estado de salud del agente (saludable/degradado/crítico), anomalías detectadas, y un listado filtrable de las consultas más lentas.
 
 ## Herramientas del Agente
 
@@ -226,6 +260,8 @@ python app.py
 | Escribir una consulta | El agente la procesa y responde |
 | `memoria` | Muestra el estado de la memoria conversacional |
 | `limpiar` | Limpia la memoria de corto plazo |
+| `metricas` | Muestra el resumen de métricas de la sesión actual |
+| `consistencia` | Muestra el análisis de consistencia por tipo de consulta |
 | `salir` | Termina el programa |
 
 ### Ejemplos de consultas para probar
@@ -252,7 +288,15 @@ python app.py
 - ¿Cuál es la capital de Francia?
 - ¿Puedo trabajar desde casa?
 
-### 3. Ejecutar tests
+### 3. Ver el dashboard de observabilidad
+
+Tras realizar varias consultas con `app.py` (esto genera trazas en `logs/trazas.jsonl`), abre el dashboard en otra terminal:
+
+```bash
+streamlit run dashboard.py
+```
+
+### 4. Ejecutar tests
 
 ```bash
 python -m pytest tests/ -v

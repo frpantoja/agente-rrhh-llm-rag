@@ -28,3 +28,6 @@ Thumbs.db
 
 # Logs
 *.log
+
+# Logs de trazabilidad (se generan en tiempo de ejecucion)
+logs/
