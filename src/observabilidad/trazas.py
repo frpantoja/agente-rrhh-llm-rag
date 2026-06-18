@@ -25,6 +25,7 @@ LOG_DIR.mkdir(exist_ok=True)
 
 logger = logging.getLogger("trazas")
 logger.setLevel(logging.INFO)
+logger.propagate = False  # evita que basicConfig() del logger raiz duplique la salida
 
 if not logger.handlers:
     file_handler = logging.FileHandler(LOG_DIR / "trazas.jsonl", encoding="utf-8")
