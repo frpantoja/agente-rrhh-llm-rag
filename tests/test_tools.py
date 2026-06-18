@@ -1,6 +1,7 @@
+# tests/test_tools.py
 """Tests para las herramientas del agente."""
 
-from src.tools.consulta_tool import consultar_documentos
+from src.tools.consulta_tool import consultar_documentos, obtener_ultimos_scores
 from src.tools.escritura_tool import generar_resumen
 from src.tools.razonamiento_tool import analizar_situacion_laboral
 
@@ -30,3 +31,9 @@ def test_razonamiento_tool_tiene_nombre():
 def test_razonamiento_tool_tiene_descripcion():
     assert "situación" in analizar_situacion_laboral.description.lower() or \
            "situacion" in analizar_situacion_laboral.description.lower()
+
+
+def test_obtener_ultimos_scores_es_lista():
+    """Antes de cualquier busqueda real, no deberia romper ni traer basura."""
+    scores = obtener_ultimos_scores()
+    assert isinstance(scores, list)

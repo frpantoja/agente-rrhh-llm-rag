@@ -1,3 +1,4 @@
+# src/tools/consulta_tool.py
 """
 Herramienta de consulta documental (Tool de consulta).
 
@@ -8,7 +9,7 @@ Forma parte del conjunto de herramientas disponibles
 """
 
 import logging
-from typing import Optional
+from typing import List, Optional
 
 from langchain_openai import OpenAIEmbeddings
 from langchain_community.vectorstores import FAISS
@@ -28,6 +29,18 @@ logger = logging.getLogger(__name__)
 
 # Instancia global del vectorstore (se carga una sola vez)
 _vectorstore: Optional[FAISS] = None
+
+# Scores de relevancia (similitud semantica) de la ultima llamada a
+# consultar_documentos. Se usa como metrica de precision de recuperacion:
+# que tan relevante fue, en promedio, el contexto efectivamente entregado
+# al LLM. El agente (src/agente.py) lee y registra estos valores en
+# AgentMetrics inmediatamente despues de cada consulta.
+_ultimos_scores: List[float] = []
+
+
+def obtener_ultimos_scores() -> List[float]:
+    """Retorna una copia de los scores de relevancia de la ultima busqueda."""
+    return list(_ultimos_scores)
 
 
 def _get_vectorstore() -> FAISS:
@@ -80,6 +93,9 @@ def consultar_documentos(consulta: str) -> str:
         if score >= SIMILARITY_THRESHOLD
     ][:RETRIEVAL_FINAL_K]
 
+    # Registrar los scores de relevancia de lo efectivamente usado, para
+    # la metrica de precision de recuperacion (ver obtener_ultimos_scores).
+    _ultimos_scores[:] = [float(score) for _, score in docs_relevantes]
     if not docs_relevantes:
         return (
             "No se encontraron documentos relevantes para esta consulta. "

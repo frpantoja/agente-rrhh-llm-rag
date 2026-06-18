@@ -1,3 +1,4 @@
+# app.py
 """
 Interfaz de consola del Agente de RRHH.
 
@@ -10,8 +11,12 @@ Comandos especiales:
 - 'salir' / 'exit': Terminar el programa.
 - 'memoria': Ver el estado de la memoria del agente.
 - 'limpiar': Limpiar la memoria conversacional.
-- 'metricas': Ver el resumen de métricas de la sesión actual.
+- 'metricas': Ver el resumen de métricas de la sesión actual
+  (incluye latencia, tasa de éxito, uso de recursos en tokens y
+  precisión de recuperación).
 - 'consistencia': Ver el análisis de consistencia por tipo de consulta.
+- 'precision': Ver el resultado de evaluar las consultas hechas hasta
+  ahora contra los casos de prueba con respuesta esperada conocida.
 """
 
 import logging
@@ -27,7 +32,7 @@ def main():
     print("\n" + "=" * 60)
     print("  Agente Inteligente de RRHH - Comercial Andina SpA")
     print("  Escribe tu consulta o 'salir' para terminar.")
-    print("  Comandos: 'memoria' | 'limpiar' | 'metricas' | 'consistencia' | 'salir'")
+    print("  Comandos: 'memoria' | 'limpiar' | 'metricas' | 'consistencia' | 'precision' | 'salir'")
     print("=" * 60 + "\n")
 
     try:
@@ -76,6 +81,16 @@ def main():
             print()
             continue
 
+        if pregunta.lower() == "precision":
+            precision = agente.obtener_precision()
+            print("\nPrecisión (contra casos de prueba conocidos):")
+            for clave, valor in precision.items():
+                if clave == "detalle":
+                    continue
+                print(f"  {clave}: {valor}")
+            print()
+            continue
+
         try:
             resultado = agente.consultar(pregunta)
 
@@ -85,7 +100,9 @@ def main():
             if resultado.herramientas_usadas:
                 print(f"\nHerramientas utilizadas: {', '.join(resultado.herramientas_usadas)}")
 
-            print(f"\ntrace_id: {resultado.trace_id} | duracion: {resultado.duracion_ms}ms")
+            print(f"\ntrace_id: {resultado.trace_id} | duracion: {resultado.duracion_ms}ms "
+                  f"| tokens: {resultado.tokens_entrada}+{resultado.tokens_salida}"
+                  f"={resultado.tokens_entrada + resultado.tokens_salida}")
             print("\n" + "-" * 60 + "\n")
 
         except Exception as e:

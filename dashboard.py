@@ -1,10 +1,12 @@
+# dashboard.py
 """
 Dashboard de observabilidad para el Agente de RRHH.
 
 Visualiza las trazas registradas en logs/trazas.jsonl: latencia por
-consulta, distribucion de uso de herramientas, tasa de error, y
-deteccion de anomalias mediante z-score sobre la ventana de consultas
-recientes.
+consulta, distribucion de uso de herramientas, tasa de error, uso de
+recursos (tokens consumidos por el LLM), precision de recuperacion
+(relevancia semantica del contexto recuperado), y deteccion de
+anomalias mediante z-score sobre la ventana de consultas recientes.
 
 Ejecucion:
     streamlit run dashboard.py
@@ -53,11 +55,15 @@ tasa_error = errores / total if total else 0
 latencia_promedio = df["duration_ms"].mean()
 latencia_p95 = df["duration_ms"].quantile(0.95)
 
-col1, col2, col3, col4 = st.columns(4)
+col1, col2, col3, col4, col5 = st.columns(5)
 col1.metric("Consultas totales", total)
 col2.metric("Tasa de error", f"{tasa_error:.1%}")
 col3.metric("Latencia promedio", f"{latencia_promedio:.0f} ms")
 col4.metric("Latencia p95", f"{latencia_p95:.0f} ms")
+if "tokens_total" in df.columns:
+    col5.metric("Tokens promedio/consulta", f"{df['tokens_total'].mean():.0f}")
+else:
+    col5.metric("Tokens promedio/consulta", "N/A")
 
 estado = "Saludable" if tasa_error <= 0.10 else ("Degradado" if tasa_error <= 0.30 else "Critico")
 color_estado = {"Saludable": "green", "Degradado": "orange", "Critico": "red"}[estado]
@@ -68,6 +74,37 @@ st.divider()
 # --- Latencia por consulta ---
 st.subheader("Latencia por consulta")
 st.line_chart(df.set_index("timestamp")["duration_ms"])
+
+st.divider()
+
+# --- Uso de recursos (tokens) y precisión de recuperación ---
+col_r1, col_r2 = st.columns(2)
+
+with col_r1:
+    st.subheader("Uso de recursos (tokens por consulta)")
+    if "tokens_total" in df.columns:
+        st.bar_chart(df.set_index("timestamp")["tokens_total"])
+        st.caption(
+            f"Total acumulado en la sesión: {df['tokens_total'].sum():.0f} tokens "
+            f"(entrada: {df.get('tokens_entrada', pd.Series(dtype=float)).sum():.0f}, "
+            f"salida: {df.get('tokens_salida', pd.Series(dtype=float)).sum():.0f})"
+        )
+    else:
+        st.info("Aún no hay datos de consumo de tokens registrados.")
+
+with col_r2:
+    st.subheader("Precisión de recuperación")
+    if "precision_recuperacion" in df.columns and df["precision_recuperacion"].notna().any():
+        precision_promedio = df["precision_recuperacion"].dropna().mean()
+        st.metric("Relevancia promedio del contexto recuperado", f"{precision_promedio:.2f}")
+        st.caption(
+            "Promedio de los scores de similitud semántica (0 a 1) de los "
+            "documentos efectivamente usados por consultar_documentos."
+        )
+    else:
+        st.info("Aún no hay consultas que hayan usado consultar_documentos.")
+
+st.divider()
 
 col_a, col_b = st.columns(2)
 
@@ -100,7 +137,7 @@ st.divider()
 
 # --- Tabla de trazas detallada ---
 st.subheader("Registro de consultas")
-columnas_mostrar = ["timestamp", "trace_id", "duration_ms", "status", "herramientas"]
+columnas_mostrar = ["timestamp", "trace_id", "duration_ms", "tokens_total", "status", "herramientas"]
 columnas_disponibles = [c for c in columnas_mostrar if c in df.columns]
 st.dataframe(df[columnas_disponibles].sort_values("timestamp", ascending=False), hide_index=True)
 

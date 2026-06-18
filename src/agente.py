@@ -1,3 +1,4 @@
+# src/agente.py
 """
 Agente funcional de RRHH con herramientas, memoria y planificación.
 
@@ -37,14 +38,46 @@ from config.settings import (
     MEMORY_TYPE,
     MEMORY_WINDOW_SIZE,
 )
-from src.tools.consulta_tool import consultar_documentos
+from src.tools.consulta_tool import consultar_documentos, obtener_ultimos_scores
 from src.tools.escritura_tool import generar_resumen
 from src.tools.razonamiento_tool import analizar_situacion_laboral
 from src.memoria import crear_memoria
 from src.observabilidad.trazas import nuevo_trace_id, trace_event, hash_consulta
-from src.observabilidad.metricas import AgentMetrics, ConsistenciaAnalyzer, AnomalyDetector
+from src.observabilidad.metricas import (
+    AgentMetrics,
+    ConsistenciaAnalyzer,
+    AnomalyDetector,
+    PrecisionEvaluator,
+)
 
 logger = logging.getLogger(__name__)
+
+
+def extraer_tokens_de_mensajes(messages) -> tuple:
+    """
+    Suma los tokens de entrada y salida reportados por el LLM a lo largo
+    de todos los mensajes de una invocacion del agente ReAct.
+
+    Una sola consulta puede implicar varias llamadas al LLM (razonamiento,
+    decision de herramienta, respuesta final), por lo que se recorren
+    todos los mensajes y se suma el `usage_metadata` de cada AIMessage
+    (los HumanMessage/SystemMessage/ToolMessage no tienen este campo).
+
+    Se extrae como funcion de modulo (en lugar de quedar embebida en
+    AgenteRRHH.consultar) para poder probarla sin necesidad de levantar
+    el agente completo ni llamar a una API real.
+
+    Returns:
+        Tupla (tokens_entrada, tokens_salida).
+    """
+    tokens_entrada = 0
+    tokens_salida = 0
+    for msg in messages:
+        usage = getattr(msg, "usage_metadata", None)
+        if usage:
+            tokens_entrada += usage.get("input_tokens", 0) or 0
+            tokens_salida += usage.get("output_tokens", 0) or 0
+    return tokens_entrada, tokens_salida
 
 
 # Prompt del sistema para el agente con instrucciones de planificación
@@ -116,6 +149,8 @@ class RespuestaAgente:
     memoria_activa: str = ""
     trace_id: str = ""
     duracion_ms: float = 0.0
+    tokens_entrada: int = 0
+    tokens_salida: int = 0
 
 
 class AgenteRRHH:
@@ -175,6 +210,7 @@ class AgenteRRHH:
         self._metrics = AgentMetrics()
         self._consistencia = ConsistenciaAnalyzer()
         self._anomaly_detector = AnomalyDetector()
+        self._precision_evaluator = PrecisionEvaluator()
 
         logger.info(
             "AgenteRRHH inicializado (modelo=%s, herramientas=%d, memoria=activa)",
@@ -232,6 +268,12 @@ class AgenteRRHH:
             # Extraer respuesta final
             respuesta_texto = resultado["messages"][-1].content
 
+            # Uso de recursos: tokens consumidos por el LLM en esta consulta
+            # (suma de todos los pasos del agente ReAct, no solo el ultimo).
+            tokens_entrada, tokens_salida = extraer_tokens_de_mensajes(
+                resultado["messages"]
+            )
+
             # Extraer herramientas usadas
             herramientas = []
             for msg in resultado["messages"]:
@@ -243,6 +285,12 @@ class AgenteRRHH:
                             metadata={"status": "ok"},
                         )
 
+            # Precision de recuperacion: scores de relevancia semantica de
+            # los documentos usados, si esta consulta invoco consultar_documentos.
+            scores_relevancia = (
+                obtener_ultimos_scores() if "consultar_documentos" in herramientas else []
+            )
+
             # Guardar en memoria de corto plazo
             self._memoria.agregar_interaccion(pregunta, respuesta_texto)
 
@@ -253,10 +301,17 @@ class AgenteRRHH:
                 duracion_ms=duracion_total_ms,
                 exito=True,
                 herramientas=herramientas,
+                tokens_entrada=tokens_entrada,
+                tokens_salida=tokens_salida,
+                scores_relevancia=scores_relevancia,
             )
             categoria = herramientas[0] if herramientas else "sin_herramienta"
             self._consistencia.registrar(categoria, len(respuesta_texto))
             anomalia = self._anomaly_detector.procesar(duracion_total_ms, trace_id)
+
+            # Si la pregunta coincide con un caso de prueba conocido (ver
+            # src/observabilidad/metricas.py), se evalua automaticamente.
+            self._precision_evaluator.evaluar(pregunta, herramientas, respuesta_texto)
 
             trace_event(
                 trace_id, "consulta_completa", "end",
@@ -266,6 +321,13 @@ class AgenteRRHH:
                     "herramientas": herramientas,
                     "es_anomalia": anomalia["es_anomalia"],
                     "z_score": anomalia["z_score"],
+                    "tokens_entrada": tokens_entrada,
+                    "tokens_salida": tokens_salida,
+                    "tokens_total": tokens_entrada + tokens_salida,
+                    "precision_recuperacion": (
+                        round(sum(scores_relevancia) / len(scores_relevancia), 3)
+                        if scores_relevancia else None
+                    ),
                 },
             )
 
@@ -276,6 +338,8 @@ class AgenteRRHH:
                 memoria_activa=self._memoria.obtener_resumen(),
                 trace_id=trace_id,
                 duracion_ms=round(duracion_total_ms, 2),
+                tokens_entrada=tokens_entrada,
+                tokens_salida=tokens_salida,
             )
 
             logger.info(
@@ -311,12 +375,23 @@ class AgenteRRHH:
             )
 
     def obtener_metricas(self) -> dict:
-        """Retorna el resumen de métricas acumuladas de la sesión."""
+        """Retorna el resumen de métricas acumuladas de la sesión
+        (incluye latencia, tasa de éxito, uso de recursos en tokens
+        y precisión de recuperación)."""
         return self._metrics.resumen()
 
     def obtener_consistencia(self) -> dict:
         """Retorna el análisis de consistencia por tipo de consulta."""
         return self._consistencia.consistencia_por_categoria()
+
+    def obtener_precision(self) -> dict:
+        """
+        Retorna el resumen de precisión evaluada contra los casos de
+        prueba conocidos (ver CASOS_PRUEBA_DEFAULT en metricas.py).
+        Solo se acumulan resultados para preguntas que coincidan
+        exactamente con un caso de prueba registrado.
+        """
+        return self._precision_evaluator.resumen()
 
     def obtener_estado_memoria(self) -> str:
         """Retorna el estado actual de la memoria del agente."""
