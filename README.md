@@ -1,6 +1,6 @@
 # Agente Inteligente de RRHH con LLM, RAG y Herramientas
 
-[![CI](https://github.com/frpantoja/asistente-rrhh-llm-rag/actions/workflows/ci.yml/badge.svg)](https://github.com/frpantoja/asistente-rrhh-llm-rag/actions)
+[![CI](https://github.com/frpantoja/agente-rrhh-llm-rag/actions/workflows/ci.yml/badge.svg)](https://github.com/frpantoja/agente-rrhh-llm-rag/actions)
 
 ## Descripción
 
@@ -81,7 +81,7 @@ asistente-rrhh-llm-rag/
 │   └── observabilidad/
 │       ├── __init__.py
 │       ├── trazas.py               # Trace_id, spans y logging estructurado
-│       └── metricas.py             # Latencia, tasa de éxito, consistencia, anomalías
+│       └── metricas.py             # Latencia, recursos, consistencia, anomalías, precisión
 ├── tests/
 │   ├── __init__.py
 │   ├── test_agente.py
@@ -115,8 +115,11 @@ El sistema registra cada consulta con un **trace_id** único que conecta todos l
 | Latencia | Tiempo total por consulta, promedio, mediana y p95 | `AgentMetrics` |
 | Tasa de éxito/error | Porcentaje de consultas resueltas sin fallos | `AgentMetrics` |
 | Uso de herramientas | Frecuencia de cada herramienta del agente | `AgentMetrics` |
+| Uso de recursos | Tokens de entrada/salida consumidos por el LLM por consulta y acumulados, con estimación de costo | `AgentMetrics` |
 | Consistencia | Variabilidad de longitud de respuesta por tipo de consulta | `ConsistenciaAnalyzer` |
 | Anomalías | Detección de picos de latencia vía z-score sobre ventana deslizante | `AnomalyDetector` |
+| Precisión de recuperación | Relevancia semántica promedio de los documentos efectivamente usados por `consultar_documentos` | `AgentMetrics` |
+| Precisión (casos de prueba) | % de selección correcta de herramienta y de palabras clave esperadas presentes en la respuesta, contra un set de preguntas con resultado esperado conocido | `PrecisionEvaluator` |
 
 ### Minimización de datos
 
@@ -128,7 +131,7 @@ Las consultas de los trabajadores se registran como **hash SHA-256**, no como te
 streamlit run dashboard.py
 ```
 
-El dashboard muestra: latencia por consulta en el tiempo, distribución de uso de herramientas, tasa de error y estado de salud del agente (saludable/degradado/crítico), anomalías detectadas, y un listado filtrable de las consultas más lentas.
+El dashboard muestra: latencia por consulta en el tiempo, uso de recursos (tokens consumidos por el LLM por consulta y acumulados), precisión de recuperación (relevancia semántica promedio del contexto), distribución de uso de herramientas, tasa de error y estado de salud del agente (saludable/degradado/crítico), anomalías detectadas, y un listado filtrable de las consultas más lentas.
 
 ## Herramientas del Agente
 
@@ -223,8 +226,8 @@ Una limitación frecuente en agentes con RAG es que preguntas de seguimiento cor
 
 ```bash
 # 1. Clonar el repositorio
-git clone https://github.com/frpantoja/asistente-rrhh-llm-rag.git
-cd asistente-rrhh-llm-rag
+git clone https://github.com/frpantoja/agente-rrhh-llm-rag.git
+cd agente-rrhh-llm-rag
 
 # 2. Crear y activar entorno virtual
 python -m venv venv
@@ -260,8 +263,9 @@ python app.py
 | Escribir una consulta | El agente la procesa y responde |
 | `memoria` | Muestra el estado de la memoria conversacional |
 | `limpiar` | Limpia la memoria de corto plazo |
-| `metricas` | Muestra el resumen de métricas de la sesión actual |
+| `metricas` | Muestra el resumen de métricas de la sesión actual (latencia, tasa de éxito, tokens consumidos, costo estimado y precisión de recuperación) |
 | `consistencia` | Muestra el análisis de consistencia por tipo de consulta |
+| `precision` | Evalúa las consultas hechas hasta ahora contra los casos de prueba con resultado esperado conocido (`CASOS_PRUEBA_DEFAULT`) |
 | `salir` | Termina el programa |
 
 ### Ejemplos de consultas para probar
