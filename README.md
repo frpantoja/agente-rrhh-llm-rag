@@ -320,6 +320,35 @@ Cada estrategia tiene ventajas y limitaciones distintas. Buffer es simple pero c
 ### ¿Por qué chunks de 300 caracteres?
 Los documentos de RRHH son cortos (~650 chars promedio). Chunks de 300 con overlap de 80 capturan secciones individuales con contexto suficiente, mejorando la precisión del retrieval respecto a chunks más grandes.
 
+### ¿Por qué RAG en lugar de fine-tuning?
+El caso organizacional requiere responder sobre documentos específicos de Comercial Andina SpA que no existen en el conocimiento pre-entrenado del modelo. El fine-tuning requiere datos etiquetados y reentrenamiento cada vez que los documentos cambian. RAG permite actualizar la base documental sin tocar el modelo, lo que es más práctico y económico para este contexto.
+
+### ¿Por qué FAISS?
+FAISS permite búsqueda semántica eficiente por similitud vectorial sin necesidad de una base de datos externa. Es suficiente para el volumen de documentos del proyecto (8 archivos, ~650 chars promedio por fragmento) y permite ejecutar el sistema de forma local sin dependencias de servicios externos de almacenamiento.
+
+### ¿Por qué se implementaron métricas y trazabilidad?
+Un agente conversacional sin observabilidad no puede mejorar de forma sistemática. Las métricas permiten identificar problemas concretos (latencia alta, precisión baja, anomalías) con evidencia, no solo con percepción. La trazabilidad con `trace_id` permite reconstruir el flujo de cualquier consulta sin exponer el contenido original del trabajador.
+
+### Limitaciones conocidas del sistema
+- **LLM:** `gpt-4o-mini` puede generar respuestas poco precisas si el contexto recuperado es insuficiente o ambiguo. La temperatura 0 reduce pero no elimina este riesgo.
+- **Documentos simulados:** Los documentos de `data/` son ficticios. Una implementación real requeriría documentos oficiales, validación jurídica y revisión del área de RRHH.
+- **Precisión de recuperación:** El valor promedio obtenido fue 0,474, lo que indica margen de mejora en el proceso de búsqueda semántica (tamaño de chunks, umbral de similitud, reranking).
+- **Latencia:** La latencia promedio observada fue ~7,7 segundos, alta para uso conversacional en producción.
+- **Sin autenticación:** El sistema actual no diferencia entre usuarios ni roles, lo que sería necesario en producción.
+
+## Mejoras Futuras
+
+Las siguientes mejoras están propuestas a partir de los datos reales obtenidos durante las pruebas (10 consultas, EP3):
+
+| Problema observado | Dato concreto | Mejora propuesta |
+|---|---|---|
+| Latencia alta | Promedio 7.737 ms, p95 11.178 ms | Streaming de respuestas, modelo más rápido, cache de consultas frecuentes |
+| Consumo de tokens elevado | 35.579 tokens en 10 consultas (3.557 promedio) | Reducir descripción de herramientas en el prompt, limitar contexto recuperado |
+| Precisión de recuperación mejorable | Promedio 0,474 | Ajustar chunk size, bajar umbral de similitud, agregar reranking |
+| Sin alertas automáticas | Dashboard requiere revisión manual | Agregar alertas cuando latencia o tasa de error superen umbrales definidos |
+| Sin autenticación de usuarios | Cualquiera puede consultar | Agregar control de roles (trabajador / RRHH / administrador) en producción |
+| Base documental simulada | 8 documentos ficticios | Reemplazar por documentos oficiales con validación jurídica |
+
 ## Tecnologías y Frameworks
 
 - **Python 3.10+**: Lenguaje principal
